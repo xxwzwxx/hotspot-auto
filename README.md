@@ -10,11 +10,11 @@
 
 | 概览 | 配置 |
 | --- | --- |
-| ![概览](screenshots/概览.png) | ![配置](screenshots/配置.png) |
+| ![概览](desktop/screenshots/概览.png) | ![配置](desktop/screenshots/配置.png) |
 
 | 日志 | 设置 |
 | --- | --- |
-| ![日志](screenshots/日志.png) | ![设置](screenshots/设置.png) |
+| ![日志](desktop/screenshots/日志.png) | ![设置](desktop/screenshots/设置.png) |
 
 ## 怎么用
 
