@@ -378,6 +378,8 @@ class App:
         self._last_tick = time.time()
         self._last_snap_ts = time.time()
         self._last_resume_at = 0.0
+        self._resume_started_at = 0.0
+        self._resume_wait = 0
         self._closing = False
         self._poll_gen = 0
         self._poller: threading.Thread | None = None
@@ -1132,7 +1134,8 @@ class App:
             return
         self._load_config_form()
         self.config_note.configure(text="已保存 · " + time.strftime("%H:%M:%S"), fg=OK)
-        self._append_log("配置已保存到 campus-config.json")
+        account = str(self.cfg.get("username") or "").strip()
+        self._append_log(f"配置已保存到 campus-config.json（账号 {account or '空'}）")
         self.refresh_now()
 
     def open_config_file(self) -> None:
@@ -1325,6 +1328,8 @@ class App:
         self.status_label.configure(text="已从睡眠恢复，正在刷新状态…", fg=TEXT)
         self.lbl_updated.configure(text="正在刷新…", fg=SUBTLE)
         self._last_snap_ts = time.time()
+        self._resume_started_at = self._last_snap_ts
+        self._resume_wait = 0
         self.refresh_now()
         self.root.after(1500, self._resume_step, self._ensure_poller)
         # 等这一轮探测出结果，再决定要不要补一次登录/开热点
@@ -1351,6 +1356,13 @@ class App:
             return
 
         snap = self.last_snap or {}
+        # 唤醒后的第一份快照可能还没回来，别拿睡眠前那份去判断要不要重新登录
+        if float(snap.get("ts") or 0.0) < self._resume_started_at:
+            if self._resume_wait < 4:
+                self._resume_wait += 1
+                self.root.after(2000, self._resume_step, self._maybe_resume_run)
+                return
+            self._resume_wait = 0
         try:
             hotspot_on = bool(probe.hotspot_state().get("on"))
         except Exception:  # noqa: BLE001 - 探测失败就当作没开，让流程去确认
