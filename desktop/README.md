@@ -174,7 +174,7 @@ python -m PyInstaller --noconfirm --clean --onedir  --windowed --optimize 2 --na
 运行所需的全部东西（都在 exe 旁边生成）：
 
 ```
-热点自动助手.exe     主程序，单文件，10.6 MB
+热点自动助手.exe     主程序，单文件，10.8 MB
 campus-config.json  校园网账号与 Portal 地址（首次启动自动生成）
 settings.json       本程序的偏好（首次启动自动生成）
 campus.log          登录日志

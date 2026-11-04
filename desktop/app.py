@@ -378,6 +378,7 @@ class App:
         self._last_tick = time.time()
         self._last_snap_ts = time.time()
         self._last_resume_at = 0.0
+        self._closing = False
         self._poll_gen = 0
         self._poller: threading.Thread | None = None
         # 断网自动重连看门狗的状态。_auto_ready_at 是下一次允许尝试的时间戳，
@@ -1325,9 +1326,18 @@ class App:
         self.lbl_updated.configure(text="正在刷新…", fg=SUBTLE)
         self._last_snap_ts = time.time()
         self.refresh_now()
-        self.root.after(1500, self._ensure_poller)
+        self.root.after(1500, self._resume_step, self._ensure_poller)
         # 等这一轮探测出结果，再决定要不要补一次登录/开热点
-        self.root.after(4000, self._maybe_resume_run)
+        self.root.after(4000, self._resume_step, self._maybe_resume_run)
+
+    def _resume_step(self, callback) -> None:
+        """唤醒后延迟执行的收尾动作；程序正在退出时直接丢弃。"""
+        if self._closing:
+            return
+        try:
+            callback()
+        except tk.TclError:
+            pass
 
     def _maybe_resume_run(self) -> None:
         """唤醒后补一次：热点被系统关了重开，网断了重登，都正常就什么也不做。"""
@@ -1920,6 +1930,7 @@ class App:
         self.quit_app()
 
     def quit_app(self) -> None:
+        self._closing = True
         self._stop.set()
         self._wake.set()
         if self.runner.busy:
