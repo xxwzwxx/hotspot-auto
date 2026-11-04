@@ -3,15 +3,6 @@
 把校园网自动登录和移动热点开成一个小窗口，不必再敲 PowerShell。现在是**一个 exe**：
 双击就能用，不需要装 Python、不需要管理员权限、不往系统里注册计划任务。
 
-## 界面预览
-
-| 概览 | 配置 |
-| --- | --- |
-| ![概览](desktop/screenshots/概览.png) | ![配置](desktop/screenshots/配置.png) |
-
-| 日志 | 设置 |
-| --- | --- |
-| ![日志](desktop/screenshots/日志.png) | ![设置](desktop/screenshots/设置.png) |
 
 ## 怎么用
 
