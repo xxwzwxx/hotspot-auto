@@ -4,6 +4,20 @@
 双击就能用，不需要装 Python、不需要管理员权限、不往系统里注册计划任务。
 
 
+## 下载
+
+最新版在 [Releases](https://github.com/xxwzwxx/hotspot-auto/releases/latest) 页面：
+
+| 文件 | 说明 |
+| --- | --- |
+| `HotspotAuto-Desktop.exe` | 单文件版，双击即用（就是下面说的 `热点自动助手.exe`） |
+| `HotspotAuto-onefile.zip` | 单文件版的压缩包 |
+| `HotspotAuto-folder.zip` | 文件夹版，解压后运行里面的 exe，启动更快 |
+| `SHA256SUMS.txt` | 上面三个文件的校验值 |
+
+> 附件名用英文，是因为 GitHub 会把中文文件名清洗成 `-.zip`、`default.exe` 这种东西，
+> 两个中文 zip 还会撞成同一个名字。
+
 ## 怎么用
 
 1. 双击项目根目录的 **`热点自动助手.exe`**（第一次启动会在 exe 旁边生成
@@ -23,7 +37,8 @@
 
 ## 拷到别的电脑上用
 
-`release\` 下有两份可以直接发出去的压缩包，解开就能用，目标机器不需要装 Python：
+`release\` 下有两份可以直接发出去的压缩包（发布页上的 `HotspotAuto-onefile.zip` / `HotspotAuto-folder.zip`
+就是它们），解开就能用，目标机器不需要装 Python：
 
 | 压缩包 | 里面是什么 | 适合 |
 | --- | --- | --- |
