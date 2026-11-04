@@ -1,0 +1,9 @@
+{
+  "portal": "http://10.10.10.10",
+  "api_port": 801,
+  "username": "18279263647",
+  "password": "123123",
+  "suffix": "",
+  "ssid_filter": "",
+  "wait_seconds": 300
+}
