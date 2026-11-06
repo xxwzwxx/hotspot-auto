@@ -369,6 +369,8 @@ class App:
         # 校园 Portal 的在线列表接口会间歇性不回包，这里缓存最近一次查到的结果，
         # 查询超时时继续显示它（并标注是多久前的结果），避免卡片来回跳。
         self._online_known: dict | None = None
+        # 上一次的热点开关状态，用来在日志里记录"开了/关了"的变化
+        self._last_hotspot_on: bool | None = None
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._busy = False
@@ -1779,10 +1781,32 @@ class App:
         portal_hint = f"Portal {portal.get('ms')} ms" if portal.get("ok") else "Portal 不可达"
         self._set_card("online", online_value, f"{online_hint} · {portal_hint}", online_color)
 
-        if hotspot.get("on"):
-            self._set_card("hotspot", "已开启", f"{hotspot.get('ip') or ''} · {hotspot.get('adapter') or ''}".strip(" ·"), OK)
+        hotspot_on = bool(hotspot.get("on"))
+        clients = int(hotspot.get("clients") or 0)
+        if hotspot_on:
+            ip_now = str(hotspot.get("ip") or "")
+            if ip_now:
+                hint = f"{ip_now} · " + (f"{clients} 台设备连接" if clients else "暂无设备连接")
+            else:
+                hint = "WinRT 报告已开启，还没分到 IP"
+            self._set_card("hotspot", "已开启", hint, OK)
         else:
-            self._set_card("hotspot", "未开启", "192.168.137.0/24 上没有本机地址", IDLE)
+            state = str(hotspot.get("state") or "")
+            if state == "Off":
+                hint = "WinRT 报告已关闭"
+            elif state == "InTransition":
+                hint = "正在开启或关闭中…"
+            else:
+                hint = "192.168.137.0/24 上没有本机地址"
+            self._set_card("hotspot", "未开启", hint, WARN if state == "InTransition" else IDLE)
+
+        if self._last_hotspot_on is not None and hotspot_on != self._last_hotspot_on:
+            if hotspot_on:
+                extra = f"（{clients} 台设备连接）" if clients else ""
+                self._append_log(f"检测到移动热点已开启{extra}", "ok")
+            else:
+                self._append_log("检测到移动热点已关闭", "warn")
+        self._last_hotspot_on = hotspot_on
 
         if ssid:
             self._set_card("ssid", ssid, "当前已连接的无线网络", OK)

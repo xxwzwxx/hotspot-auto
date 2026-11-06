@@ -218,8 +218,8 @@ def local_info() -> dict:
     return {"ip": ip, "adapter": adapter["name"], "mac": adapter["mac"], "up_adapters": up_adapters}
 
 
-def hotspot_state() -> dict:
-    """热点是否开启：找 192.168.137.x 的本机地址（ICS 默认网段）。"""
+def _hotspot_ip() -> tuple[str, str]:
+    """192.168.137.x 上的本机地址（ICS 默认网段）。"""
     for adapter in list_adapters():
         if not adapter["up"]:
             continue
@@ -232,8 +232,111 @@ def hotspot_state() -> dict:
                 name = adapter["name"]
                 if "Wi-Fi Direct" in (adapter["desc"] or ""):
                     name = "移动热点网卡"
-                return {"on": True, "ip": ip, "adapter": name}
-    return {"on": False, "ip": "", "adapter": ""}
+                return ip, name
+    return "", ""
+
+
+_TETHER_QUERY = r"""
+$ErrorActionPreference = 'Stop'
+try {
+  $null = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking.NetworkOperators,ContentType=WindowsRuntime]
+  $null = [Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]
+  $profile = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile()
+  if ($null -eq $profile) {
+    '{"state":"NoProfile","clients":0}'
+  } else {
+    $manager = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]::CreateFromConnectionProfile($profile)
+    '{"state":"' + $manager.TetheringOperationalState + '","clients":' + $manager.ClientCount + '}'
+  }
+} catch {
+  '{"state":"Error","clients":0}'
+}
+"""
+
+_TETHER_TTL = 15.0
+_TETHER_BUSY_TTL = 2.0
+_tether_cache: dict = {"at": 0.0, "state": "", "clients": 0, "ttl": _TETHER_TTL}
+
+
+def _tether_info(timeout: float = 10.0, force: bool = False) -> dict:
+    """问 WinRT：热点开没开、几台设备连着（15 秒缓存，切换中只缓存 2 秒）。"""
+    now = time.monotonic()
+    if not force and _tether_cache["at"] and now - _tether_cache["at"] < float(
+        _tether_cache.get("ttl") or _TETHER_TTL
+    ):
+        return dict(_tether_cache)
+
+    import base64
+    import subprocess
+
+    encoded = base64.b64encode(_TETHER_QUERY.encode("utf-16-le")).decode("ascii")
+    try:
+        proc = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                encoded,
+            ],
+            capture_output=True,
+            timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        return {"at": 0.0, "state": "", "clients": 0}
+
+    text = _decode_console(proc.stdout or b"") + "\n" + _decode_console(proc.stderr or b"")
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        state = str(data.get("state") or "")
+        _tether_cache.update(
+            at=time.monotonic(),
+            state=state,
+            clients=int(data.get("clients") or 0),
+            ttl=_TETHER_BUSY_TTL if state == "InTransition" else _TETHER_TTL,
+        )
+        return dict(_tether_cache)
+    return {"at": 0.0, "state": "", "clients": 0, "ttl": _TETHER_TTL}
+
+
+def hotspot_state(use_winrt: bool = True) -> dict:
+    """热点是否开启：192.168.137.x 有没有本机地址，再用 WinRT 交叉确认。"""
+    ip, adapter = _hotspot_ip()
+    info = _tether_info() if use_winrt else {"state": "", "clients": 0}
+    state = str(info.get("state") or "")
+    # 有 IP 但 WinRT 说关着，多半是缓存放早了（刚开启），强制重问一次
+    if use_winrt and ip and state in ("Off", "InTransition", ""):
+        info = _tether_info(force=True)
+        state = str(info.get("state") or "")
+    clients = int(info.get("clients") or 0)
+    on = bool(ip) or state == "On"
+    if ip:
+        source = "ip"
+    elif state == "On":
+        source = "winrt"
+    elif state == "Off":
+        source = "winrt-off"
+    elif state == "InTransition":
+        source = "winrt-busy"
+    else:
+        source = ""
+    return {
+        "on": on,
+        "ip": ip,
+        "adapter": adapter,
+        "source": source,
+        "state": state,
+        "clients": clients,
+    }
 
 
 # --------------------------------------------------------------------- SSID
@@ -439,6 +542,7 @@ def wifi_ssid() -> str:
 def reset_caches() -> None:
     """系统睡眠唤醒、切换网卡之后调用：丢掉缓存，下一次重新读一遍。"""
     _ssid_cache.update(at=0.0, value="")
+    _tether_cache.update(at=0.0, state="", clients=0)
 
 
 def _decode_console(raw: bytes) -> str:

@@ -371,6 +371,8 @@ def enable_hotspot(ctx, timeout: int = 120) -> bool:
         return False
 
     log(result.get("message") or "移动热点已开启。")
+    # 刚开启时缓存里可能还写着 Off，丢掉让下一次探测重新问 WinRT
+    probe.reset_caches()
     # 等 192.168.137.x 真的出现，避免“命令成功了但网卡还没起来”
     deadline = time.time() + _HOTSPOT_WAIT
     while time.time() < deadline:
