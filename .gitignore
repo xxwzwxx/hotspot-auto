@@ -17,3 +17,6 @@ __pycache__/
 .idea/
 Thumbs.db
 desktop.ini
+
+# 本机开发脚本（截图/自检），不入库
+.dev/

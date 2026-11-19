@@ -181,6 +181,10 @@ class TrayIcon:
         if self._hwnd:
             user32.PostMessageW(self._hwnd, WM_SET_TOOLTIP, 0, 0)
 
+    def set_menu(self, menu_items: list) -> None:
+        """换一套菜单项（菜单每次右键时现拼，所以直接替换列表即可）。"""
+        self._menu_items = list(menu_items)
+
     @property
     def last_error(self) -> str | None:
         return self._last_error

@@ -973,6 +973,7 @@ class App:
         self.var_auto_reconnect = tk.BooleanVar(value=True)
         self.var_run_on_start = tk.BooleanVar(value=True)
         self.var_resume_autostart = tk.BooleanVar(value=True)
+        self.var_hotspot_enabled = tk.BooleanVar(value=True)
 
         self._check_row(
             body, 1, "开机时自动启动（仅当前用户）", self.var_autostart, self._toggle_autostart,
@@ -992,13 +993,18 @@ class App:
             "登录成功或失败都会弹一条通知，配合托盘运行时很有用。", wrap=self.s(470),
         )
         self._check_row(
-            body, 5, "启动后自动登录并开热点", self.var_run_on_start, None,
+            body, 5, "启动后自动登录校园网", self.var_run_on_start, None,
             "启动后立刻跑一次完整流程，不用再点按钮；没填账号或正在执行时跳过。",
             wrap=self.s(470),
         )
         self._check_row(
-            body, 6, "睡眠唤醒后自动连网并开热点", self.var_resume_autostart, None,
-            "合盖睡眠、休眠唤醒后自动补一次：热点被系统关掉就重开，网断了就重登。",
+            body, 6, "同时开启移动热点", self.var_hotspot_enabled, self._on_hotspot_toggle,
+            "关掉后只做校园网登录：一键按钮、开机自启、唤醒补连接都不会碰热点。",
+            wrap=self.s(470),
+        )
+        self._check_row(
+            body, 7, "睡眠唤醒后自动恢复连接", self.var_resume_autostart, None,
+            "合盖睡眠、休眠唤醒后自动补一次：网断了重登，热点没了重开（受上面的热点开关控制）。",
             wrap=self.s(470),
         )
 
@@ -1048,10 +1054,10 @@ class App:
         )
 
         self.settings_note = tk.Label(outer, text="", font=self.f_hint, bg=BG, fg=SUBTLE, anchor="w")
-        self.settings_note.pack(fill="x", pady=(self.s(10), 0))
+        self.settings_note.pack(fill="x", pady=(self.s(6), 0))
 
         about = tk.Frame(outer, bg=BG)
-        about.pack(fill="x", pady=(self.s(8), 0))
+        about.pack(fill="x", pady=(self.s(5), 0))
         runtime = "单文件版" if getattr(sys, "frozen", False) else f"Python {sys.version.split()[0]} + tkinter"
         about_lines = (
             f"{APP_NAME} {APP_VERSION} · {runtime} · 无第三方依赖",
@@ -1062,7 +1068,7 @@ class App:
 
     def _check_row(self, parent, row: int, text: str, var, command, hint: str, wrap: int = 0) -> None:
         box = tk.Frame(parent, bg=CARD)
-        box.grid(row=row, column=0, sticky="ew", pady=(0, self.s(6)))
+        box.grid(row=row, column=0, sticky="ew", pady=(0, self.s(2)))
         check = ToggleBox(box, self, text, var, command)
         check.pack(anchor="w")
         tk.Label(
@@ -1088,6 +1094,8 @@ class App:
         self.var_auto_reconnect.set(bool(self.settings.get("auto_reconnect", True)))
         self.var_run_on_start.set(bool(self.settings.get("run_on_start", True)))
         self.var_resume_autostart.set(bool(self.settings.get("resume_autostart", True)))
+        self.var_hotspot_enabled.set(bool(self.settings.get("hotspot_enabled", True)))
+        self._apply_hotspot_enabled(save=False, log=False)
         self.var_interval.set(str(self.settings.get("poll_interval", 5)))
         self.var_reconnect_interval.set(str(self.settings.get("reconnect_interval", 20)))
         self.var_campus_timeout.set(str(self.settings.get("campus_timeout", 900)))
@@ -1177,6 +1185,7 @@ class App:
             "auto_reconnect": bool(self.var_auto_reconnect.get()),
             "run_on_start": bool(self.var_run_on_start.get()),
             "resume_autostart": bool(self.var_resume_autostart.get()),
+            "hotspot_enabled": bool(self.var_hotspot_enabled.get()),
             "poll_interval": as_int(self.var_interval, 5, 2, 120),
             "reconnect_interval": as_int(self.var_reconnect_interval, 20, 10, 300),
             "campus_timeout": as_int(self.var_campus_timeout, 900, 60, 3600),
@@ -1194,8 +1203,48 @@ class App:
         else:
             watch = "断网自动重连已关闭"
         startup = "启动时自动连接已开启" if values["run_on_start"] else "启动时自动连接已关闭"
-        self._append_log(f"程序设置已保存（刷新间隔 {values['poll_interval']} 秒；{watch}；{startup}）")
+        hotspot = "会开热点" if values["hotspot_enabled"] else "只登录不开热点"
+        self._append_log(
+            f"程序设置已保存（刷新间隔 {values['poll_interval']} 秒；{watch}；{startup}；{hotspot}）"
+        )
         self._wake.set()
+
+    # -------------------------------------------------------------- 热点开关
+    def _on_hotspot_toggle(self) -> None:
+        """勾选框一改就生效（和其它开关不同，这个会直接影响主按钮跑什么）。"""
+        self._apply_hotspot_enabled(save=True, log=True)
+        self._wake.set()
+
+    def _hotspot_enabled(self) -> bool:
+        return bool(self.settings.get("hotspot_enabled", True))
+
+    def _apply_hotspot_enabled(self, save: bool, log: bool) -> None:
+        enabled = bool(self.var_hotspot_enabled.get())
+        self.settings = dict(self.settings)
+        self.settings["hotspot_enabled"] = enabled
+        if hasattr(self, "btn_run_all"):
+            self.btn_run_all.set_text("一键登录并开热点" if enabled else "一键登录校园网")
+        if hasattr(self, "btn_hotspot"):
+            self.btn_hotspot.configure(state="normal" if enabled else "disabled")
+        self._update_tray_menu()
+        if save:
+            try:
+                config.save_settings({"hotspot_enabled": enabled})
+            except OSError as exc:
+                messagebox.showerror(
+                    "保存失败", f"无法写入 {config.SETTINGS_PATH}：\n{exc}", parent=self.root
+                )
+        if log:
+            self._append_log(
+                "已开启移动热点功能：一键执行会登录后开热点。" if enabled
+                else "已关闭移动热点功能：只登录校园网，不碰热点。",
+                "ok" if enabled else "warn",
+            )
+        # 卡片上的热点状态立刻按开关重画一次
+        if getattr(self, "last_snap", None):
+            self._apply_snapshot(self.last_snap)
+        if not self.recent_lines:
+            self._render_recent()
 
     def test_notify(self) -> None:
         notify.send_toast_async(APP_NAME, "通知测试：能看到这条说明系统通知正常。")
@@ -1242,7 +1291,10 @@ class App:
     def run_all(self) -> None:
         if not self._guard():
             return
-        self._start_run(self._campus_steps() + self._hotspot_steps(), "一键登录并开热点")
+        if self._hotspot_enabled():
+            self._start_run(self._campus_steps() + self._hotspot_steps(), "一键登录并开热点")
+        else:
+            self._start_run(self._campus_steps(), "一键登录校园网")
 
     def run_campus(self) -> None:
         if not self._guard():
@@ -1250,6 +1302,9 @@ class App:
         self._start_run(self._campus_steps(), "仅登录校园网")
 
     def run_hotspot(self) -> None:
+        if not self._hotspot_enabled():
+            self._append_log("移动热点功能已在设置里关闭，需要的话先打开「同时开启移动热点」。", "warn")
+            return
         if self._busy:
             self._append_log("已有一个流程在执行，请先等待或取消。")
             return
@@ -1370,11 +1425,14 @@ class App:
         except Exception:  # noqa: BLE001 - 探测失败就当作没开，让流程去确认
             hotspot_on = False
         online = snap.get("online") or {}
-        need_hotspot = not hotspot_on
+        need_hotspot = self._hotspot_enabled() and not hotspot_on
         need_login = not (bool(online.get("ok")) and bool(online.get("online")))
 
         if not need_hotspot and not need_login:
-            self._append_log("唤醒后检查：网络和热点都在，无需操作。")
+            if self._hotspot_enabled():
+                self._append_log("唤醒后检查：网络和热点都在，无需操作。")
+            else:
+                self._append_log("唤醒后检查：网络在线（热点功能已关闭），无需操作。")
             return
 
         parts = []
@@ -1501,12 +1559,20 @@ class App:
         if not config.is_configured(self.cfg):
             self._append_log("启动自动连接：还没有填写账号密码，本次跳过。", "warn")
             return
-        self._start_run(
-            self._campus_steps() + self._hotspot_steps(),
-            "启动自动连接",
-            auto=True,
-            origin="startup",
-        )
+        if self._hotspot_enabled():
+            self._start_run(
+                self._campus_steps() + self._hotspot_steps(),
+                "启动自动连接",
+                auto=True,
+                origin="startup",
+            )
+        else:
+            self._start_run(
+                self._campus_steps(),
+                "启动自动连接",
+                auto=True,
+                origin="startup",
+            )
 
     def refresh_now(self) -> None:
         self.lbl_updated.configure(text="正在检测…")
@@ -1517,20 +1583,34 @@ class App:
         self._wake.set()
 
     # -------------------------------------------------------------- 托盘
+    def _tray_menu_items(self) -> list:
+        enabled = self._hotspot_enabled()
+        items = [
+            (1, "显示主界面"),
+            None,
+            (2, "一键登录并开热点" if enabled else "一键登录校园网"),
+            (3, "仅登录校园网"),
+        ]
+        if enabled:
+            items.append((4, "仅开启热点"))
+        items += [None, (5, "退出")]
+        return items
+
+    def _update_tray_menu(self) -> None:
+        tray_icon = getattr(self, "_tray", None)
+        if tray_icon is None or not getattr(self, "_tray_ready", False):
+            return
+        try:
+            tray_icon.set_menu(self._tray_menu_items())
+        except Exception as exc:  # noqa: BLE001 - 换菜单失败不该影响主流程
+            self._append_log(f"更新托盘菜单失败：{exc}")
+
     def _start_tray(self) -> None:
         icon = config.ASSETS_DIR / "app.ico"
         if not icon.exists():
             self._append_log("找不到托盘图标 assets/app.ico，托盘未启用。")
             return
-        menu = [
-            (1, "显示主界面"),
-            None,
-            (2, "一键登录并开热点"),
-            (3, "仅登录校园网"),
-            (4, "仅开启热点"),
-            None,
-            (5, "退出"),
-        ]
+        menu = self._tray_menu_items()
         command_map = {"show": 1, "run_all": 2, "campus": 3, "hotspot": 4, "quit": 5}
         try:
             self._tray = tray.TrayIcon(str(icon), f"{APP_NAME} {APP_VERSION}", menu, self.queue, command_map)
@@ -1550,7 +1630,10 @@ class App:
         online = snap.get("online") or {}
         hotspot = snap.get("hotspot") or {}
         state = "校园网在线" if online.get("online") else "校园网未在线"
-        hotspot_text = "热点已开" if hotspot.get("on") else "热点关闭"
+        if self._hotspot_enabled():
+            hotspot_text = "热点已开" if hotspot.get("on") else "热点关闭"
+        else:
+            hotspot_text = "热点功能关闭"
         self._tray.set_tooltip(f"{APP_NAME} · {state} · {hotspot_text}")
 
     # -------------------------------------------------------------- 事件循环
@@ -1673,9 +1756,10 @@ class App:
             self.progress_label.configure(text="")
             if self.settings.get("notify_on_finish", True):
                 if origin == "startup":
+                    done_text = "已自动登录校园网并开启热点" if self._hotspot_enabled() else "已自动登录校园网"
                     notify.send_toast_async(
                         APP_NAME,
-                        "已自动登录校园网并开启热点" if ok else f"开机自动连接失败：{message or '脚本出错'}",
+                        done_text if ok else f"开机自动连接失败：{message or '脚本出错'}",
                     )
                 elif origin == "reconnect":
                     notify.send_toast_async(
@@ -1783,7 +1867,10 @@ class App:
 
         hotspot_on = bool(hotspot.get("on"))
         clients = int(hotspot.get("clients") or 0)
-        if hotspot_on:
+        if not self._hotspot_enabled():
+            self._set_card("hotspot", "已关闭功能", "设置里打开「同时开启移动热点」后才会管理热点", IDLE)
+            self._last_hotspot_on = None
+        elif hotspot_on:
             ip_now = str(hotspot.get("ip") or "")
             if ip_now:
                 hint = f"{ip_now} · " + (f"{clients} 台设备连接" if clients else "暂无设备连接")
@@ -1800,7 +1887,7 @@ class App:
                 hint = "192.168.137.0/24 上没有本机地址"
             self._set_card("hotspot", "未开启", hint, WARN if state == "InTransition" else IDLE)
 
-        if self._last_hotspot_on is not None and hotspot_on != self._last_hotspot_on:
+        if self._hotspot_enabled() and self._last_hotspot_on is not None and hotspot_on != self._last_hotspot_on:
             if hotspot_on:
                 extra = f"（{clients} 台设备连接）" if clients else ""
                 self._append_log(f"检测到移动热点已开启{extra}", "ok")
@@ -1822,7 +1909,10 @@ class App:
             self._set_pill("online", "校园网", "未在线", WARN)
         else:
             self._set_pill("online", "校园网", "未知", IDLE)
-        self._set_pill("hotspot", "热点", "已开启" if hotspot.get("on") else "已关闭", OK if hotspot.get("on") else IDLE)
+        if self._hotspot_enabled():
+            self._set_pill("hotspot", "热点", "已开启" if hotspot_on else "已关闭", OK if hotspot_on else IDLE)
+        else:
+            self._set_pill("hotspot", "热点", "已关闭功能", IDLE)
         self._set_pill("ssid", "Wi-Fi", ssid or "未连接", OK if ssid else IDLE)
 
         self._update_banner()
@@ -1870,7 +1960,12 @@ class App:
         widget.delete("1.0", "end")
         lines = list(self.recent_lines)[-5:]
         if not lines:
-            widget.insert("end", "还没有执行记录。点上面的「一键登录并开热点」，这里会显示每一步的进展。", "info")
+            action = "一键登录并开热点" if self._hotspot_enabled() else "一键登录校园网"
+            widget.insert(
+                "end",
+                f"还没有执行记录。点上面的「{action}」，这里会显示每一步的进展。",
+                "info",
+            )
         for line in lines:
             widget.insert("end", line + "\n", self._classify(line))
         widget.configure(state="disabled")

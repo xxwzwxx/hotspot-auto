@@ -79,6 +79,7 @@ DEFAULT_SETTINGS = {
     "reconnect_interval": 20,
     "run_on_start": True,
     "resume_autostart": True,
+    "hotspot_enabled": True,
 }
 
 
